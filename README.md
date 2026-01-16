@@ -1,177 +1,93 @@
 # TrustNet AI
 
-LLM Hallucination Detection & Trust Scoring System
+TrustNet AI detects hallucinations in LLM-generated answers. It extracts reliability signals, runs a supervised classifier, and returns a label, trust score, and signal breakdown.
 
-TrustNet AI is a production-oriented system that evaluates the reliability of LLM-generated answers by detecting hallucinations, assigning a trust score, and providing transparent signal-level explanations.
+## Key Features
+- FastAPI inference service exposing `/evaluate`
+- Signal extraction: semantic similarity (SentenceTransformers), entity overlap (spaCy NER)
+- Supervised models: XGBoost (primary), Logistic Regression (baseline); dummy fallback if artifacts are missing
+- Frontends: Streamlit app and Next.js (TypeScript + Tailwind) UI
 
-## Highlights
+## High-Level Architecture
+User → UI (Streamlit or Next.js) → FastAPI → Signals → ML model (XGBoost/LogReg or fallback) → Label + trust score
 
-- **Hallucination classification:** grounded, partially_grounded, hallucinated
-- **Trust score (0–1):** probability-based confidence of answer reliability
-- **Explainability:** signal-level breakdown (semantic similarity, entity overlap), extensible signals (self-consistency, token entropy)
-- **Clean architecture:** UI → Backend API → ML inference → Decision Engine
+## Signal Extraction
+- **Semantic similarity:** all-MiniLM-L6-v2 embeddings; cosine similarity normalized to [0, 1]
+- **Entity overlap:** spaCy `en_core_web_sm` named-entity overlap, normalized to [0, 1]
+- Self-consistency and entropy placeholders exist but are currently constant `0.0`
 
-## Architecture
-
-User Input → Streamlit UI → FastAPI Backend → Signal Extraction → ML (XGBoost) → Trust Score + Label → Decision Engine
-
-- **UI (Streamlit):** presentation only
-- **Backend (FastAPI):** API + orchestration
-- **ML (offline):** training and evaluation
-- **Decision Engine:** product-tunable thresholds, auditable, swappable without retraining
+## ML Models & Evaluation
+- Training scripts: `ml/models/train_xgboost.py`, `ml/models/train_logreg.py`
+- Features for training/inference: `[semantic_similarity, entity_overlap, self_consistency, entropy]`
+- Artifacts expected at `ml/artifacts/xgb.pkl` (or `logreg.pkl`); if missing, backend uses a DummyModel based on semantic similarity
+- Evaluation utilities: `ml/evaluation/evaluate_model.py`, `baselines.py`, `ablation.py`
 
 ## Project Structure
-
 ```
-trustnet-ai/
-├── backend/                     # FastAPI service
-│   ├── app/
-│   │   ├── api/                 # HTTP routes
-│   │   │   └── routes.py
-│   │   ├── core/                # Orchestration & business logic
-│   │   │   ├── evaluator.py
-│   │   │   ├── decision_engine.py
-│   │   │   ├── features.py
-│   │   │   └── model_loader.py
-│   │   ├── signals/             # Signal extraction
-│   │   │   ├── semantic_similarity.py
-│   │   │   └── entity_overlap.py
-│   │   ├── schemas/             # API contracts
-│   │   │   └── request_response.py
-│   │   └── main.py              # FastAPI entrypoint
-│   └── requirements.txt
-├── ml/                          # Offline ML pipeline
-│   ├── features/
-│   │   └── build_features.py
-│   ├── models/
-│   │   ├── train_logreg.py
-│   │   ├── train_xgboost.py
-│   │   └── evaluate_utils.py
-│   ├── evaluation/
-│   │   ├── evaluate_model.py
-│   │   ├── baselines.py
-│   │   └── ablation.py
-│   └── artifacts/               # Saved models (ignored in git)
-│       ├── logreg.pkl
-│       └── xgb.pkl
-├── data/                        # Dataset & labeling pipeline
-│   ├── raw/
-│   ├── processed/               # train/val/test .jsonl
-│   └── scripts/                 # build/split/generate
-├── ui/                          # Streamlit app
-│   ├── streamlit_app.py
-│   └── requirements.txt
-├── .gitignore
-└── README.md
+backend/                # FastAPI service
+	app/
+		api/routes.py       # /evaluate endpoint
+		core/               # evaluation, decision, features, model loading
+		signals/            # semantic similarity, entity overlap
+		schemas/            # Pydantic request/response models
+		main.py             # app entrypoint + CORS
+ml/                     # Offline training/eval
+	features/             # feature extraction for datasets
+	models/               # training scripts (XGBoost, LogReg)
+	evaluation/           # metrics, baselines, ablation
+	artifacts/            # model files (gitignored)
+data/                   # raw/processed JSONL and dataset scripts
+frontend/               # Next.js + Tailwind UI
+ui/                     # Streamlit UI
 ```
 
-Key files:
-- API routes: [backend/app/api/routes.py](backend/app/api/routes.py)
-- Evaluator: [backend/app/core/evaluator.py](backend/app/core/evaluator.py)
-- Signals: [backend/app/signals](backend/app/signals)
-- UI: [ui/streamlit_app.py](ui/streamlit_app.py)
+## Backend API
+- **POST `/evaluate`**
+	- Request: `{ "question": str, "context": str, "answer": str }`
+	- Response: `{ "label": str, "trust_score": float, "signals": { semantic_similarity, entity_overlap, self_consistency, entropy } }`
+	- CORS allows `http://localhost:3000` for the Next.js dev server
 
-## Signals
+## Local Setup & Running
 
-- **Semantic Similarity:** embedding similarity between answer and context (0–1)
-- **Entity Overlap:** named-entity grounding score (0–1)
-- **Self-Consistency (extensible):** agreement across multiple generations
-- **Token Entropy (extensible):** model uncertainty estimate
-
-## Decision Engine
-
-| Trust Score | Action               |
-|-------------|----------------------|
-| > 0.80      | show                 |
-| 0.50–0.80   | show_with_warning    |
-| < 0.50      | flag                 |
-
-Decision logic is cleanly separated from ML inference and can be tuned without model changes.
-
-## Quick Start (Local)
-
-Prerequisites: Python 3.11
-
-1) Create and activate a virtual environment
-
+### Backend
 ```powershell
-py -3.11 -m venv venv311
-./venv311/Scripts/Activate.ps1
-```
-
-2) Install dependencies
-
-```powershell
-# Backend
 cd backend
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 
-# UI
-cd ../ui
+# If you have a trained model, place it at ml/artifacts/xgb.pkl
+# Otherwise the DummyModel fallback will be used
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001 --reload
+```
+
+### Next.js Frontend
+```powershell
+cd frontend
+npm install
+
+# Set backend URL (already used in .env.local)
+echo NEXT_PUBLIC_API_URL=http://127.0.0.1:8001 > .env.local
+
+npm run dev  # http://localhost:3000
+```
+
+### Streamlit UI (optional)
+```powershell
+cd ui
 pip install -r requirements.txt
+streamlit run streamlit_app.py  # expects backend at http://127.0.0.1:8001/evaluate
 ```
 
-3) Run services
-
+### Train a Model (optional)
 ```powershell
-# Backend (in ./backend)
-uvicorn app.main:app --reload
-
-# UI (in ./ui)
-streamlit run streamlit_app.py
+python ml/models/train_xgboost.py  # writes ml/artifacts/xgb.pkl
 ```
 
-By default the UI calls the backend at `http://127.0.0.1:8000/evaluate`. If you change the backend port, update `BACKEND_URL` in [ui/streamlit_app.py](ui/streamlit_app.py).
-
-## API
-
-POST `/evaluate`
-
-Request
-```json
-{
-	"question": "...",
-	"context": "...",
-	"answer": "..."
-}
-```
-
-Response
-```json
-{
-	"label": "grounded",
-	"trust_score": 0.92,
-	"decision": "show",
-	"signals": {
-		"semantic_similarity": 0.93,
-		"entity_overlap": 0.88,
-		"self_consistency": 0.0,
-		"entropy": 0.0
-	}
-}
-```
-
-## ML Notes
-
-- Task: multi-class classification (grounded, partially_grounded, hallucinated)
-- Models: Logistic Regression (baseline), XGBoost (main)
-- Features: `[semantic_similarity, entity_overlap, self_consistency, entropy]`
-
-Train (optional):
-```powershell
-./venv311/Scripts/Activate.ps1
-python ml/models/train_xgboost.py
-```
-
-Ensure processed datasets exist under `data/processed/` (e.g., `train.jsonl`). See [data/scripts](data/scripts) for helpers.
-
-## Tech Stack
-
-- Backend: FastAPI, Python 3.11
-- UI: Streamlit
-- ML: scikit-learn, XGBoost
-- NLP: spaCy, SentenceTransformers
+## Deployment Notes
+- Backend expects model artifacts under `ml/artifacts/`; ensure they are packaged or mounted
+- spaCy model `en_core_web_sm` must be available in the runtime
+- Configure `NEXT_PUBLIC_API_URL` for the frontend deployment (Vercel or similar)
+- CORS origins are limited to localhost for development; adjust in `backend/app/main.py` for production
 
 ## License
 
