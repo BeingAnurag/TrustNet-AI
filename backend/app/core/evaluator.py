@@ -1,39 +1,22 @@
-from app.signals.semantic_similarity import semantic_similarity
-from app.signals.entity_overlap import entity_overlap
+from app.core.features import build_features
+from app.core.model_loader import predict
+from app.core.decision_engine import decision_from_trust
 
 
-def evaluate_signals(question: str, context: str, answer: str):
-    """
-    Signal-only evaluation (no ML, no decisions)
-    """
+def evaluate(question: str, context: str, answer: str):
+    features = build_features(question, context, answer)
+    prediction = predict(features)
 
-    signals = {
-        "semantic_similarity": semantic_similarity(answer, context),
-        "entity_overlap": entity_overlap(answer, context),
-
-        
-        "self_consistency": 0.0,
-        "entropy": 0.0,
-    }
-
-    return signals
-
-
-def dummy_evaluate(question: str, context: str, answer: str):
-    """
-    Temporary wrapper until ML arrives
-    """
-    signals = evaluate_signals(question, context, answer)
-
-    # Temporary values — NOT LOGIC
-    trust_score = round(
-        (signals["semantic_similarity"] + signals["entity_overlap"]) / 2, 4
-    )
-
-    label = "partially_grounded"
+    decision = decision_from_trust(prediction["trust_score"])
 
     return {
-        "label": label,
-        "trust_score": trust_score,
-        "signals": signals,
+        "label": prediction["label"],
+        "trust_score": round(prediction["trust_score"], 4),
+        "decision": decision,
+        "signals": {
+            "semantic_similarity": features[0],
+            "entity_overlap": features[1],
+            "self_consistency": features[2],
+            "entropy": features[3],
+        },
     }

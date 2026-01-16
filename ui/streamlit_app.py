@@ -27,6 +27,15 @@ if st.button("Evaluate Answer"):
         st.write(f"**Label:** {data['label']}")
         st.write(f"**Trust Score:** {data['trust_score'] * 100:.2f}%")
 
+        st.subheader("Final Decision")
+        st.write(f"**Action:** {data['decision'].upper()}")
+
+        if data["decision"] == "show_with_warning":
+            st.warning("⚠️ This answer may be partially hallucinated.")
+
+        if data["decision"] == "flag":
+            st.error("❌ This answer is likely hallucinated.")
+
         st.subheader("Signal Breakdown")
         for k, v in data["signals"].items():
             st.write(f"{k}: {v:.2f}")

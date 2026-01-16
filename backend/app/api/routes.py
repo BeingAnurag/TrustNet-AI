@@ -4,14 +4,14 @@ from app.schemas.request_response import (
     EvaluationResponse,
     SignalScores,
 )
-from app.core.evaluator import dummy_evaluate
+from app.core.evaluator import evaluate
 
 router = APIRouter()
 
 
 @router.post("/evaluate", response_model=EvaluationResponse)
 def evaluate_answer(request: EvaluationRequest):
-    result = dummy_evaluate(
+    result = evaluate(
         request.question,
         request.context,
         request.answer,
