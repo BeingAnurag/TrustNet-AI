@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-BACKEND_URL = "http://127.0.0.1:8000/evaluate"
+BACKEND_URL = "http://127.0.0.1:8001/evaluate"
 
 st.set_page_config(page_title="TrustNet AI", layout="centered")
 
