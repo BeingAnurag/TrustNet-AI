@@ -51,8 +51,40 @@ export default function Home() {
         throw new Error(errorData.detail || "Failed to evaluate answer");
       }
 
-      const data: EvaluateResponse = await response.json();
-      setResult(data);
+      const raw = await response.json();
+
+      // Normalize backend response shape to UI contract without changing backend
+      const weights: Record<string, number> = {
+        semantic_similarity: 0.5,
+        entity_overlap: 0.3,
+        self_consistency: 0.1,
+        entropy: 0.1,
+      };
+
+      const signalsArray = Array.isArray(raw.signals)
+        ? raw.signals
+        : Object.entries(raw.signals || {}).map(([name, value]) => ({
+            name,
+            value: typeof value === "number" ? value : Number(value ?? 0),
+            weight: weights[name] ?? 0,
+          }));
+
+      const normalized: EvaluateResponse = {
+        predicted_label: (raw.predicted_label ?? raw.label) as any,
+        trust_score: Number(raw.trust_score ?? 0),
+        decision:
+          raw.decision ?? (Number(raw.trust_score ?? 0) > 0.8
+            ? "show"
+            : Number(raw.trust_score ?? 0) >= 0.5
+            ? "show_with_warning"
+            : "flag"),
+        signals: signalsArray,
+        question,
+        context,
+        answer,
+      };
+
+      setResult(normalized);
     } catch (err) {
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
@@ -68,7 +100,7 @@ export default function Home() {
     switch (decision) {
       case "show":
         return {
-          badge: "bg-emerald-500 text-white shadow-emerald-200",
+          badge: "bg-emerald-500 text-white shadow-md",
           icon: "✓",
           label: "Trusted",
           description: "High confidence - safe to display",
@@ -76,7 +108,7 @@ export default function Home() {
         };
       case "show_with_warning":
         return {
-          badge: "bg-amber-500 text-white shadow-amber-200",
+          badge: "bg-amber-500 text-white shadow-md",
           icon: "⚠",
           label: "Warning",
           description: "Moderate confidence - review recommended",
@@ -84,7 +116,7 @@ export default function Home() {
         };
       case "flag":
         return {
-          badge: "bg-red-500 text-white shadow-red-200",
+          badge: "bg-red-500 text-white shadow-md",
           icon: "✕",
           label: "Hallucinated",
           description: "Low confidence - likely contains errors",
@@ -92,7 +124,7 @@ export default function Home() {
         };
       default:
         return {
-          badge: "bg-slate-500 text-white shadow-slate-200",
+          badge: "bg-slate-500 text-white shadow-md",
           icon: "?",
           label: "Unknown",
           description: "Unable to determine",
@@ -220,7 +252,7 @@ export default function Home() {
                 <button
                   onClick={handleEvaluate}
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 disabled:from-slate-400 disabled:to-slate-400 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:cursor-not-allowed disabled:shadow-none"
+                  className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white font-semibold py-4 px-6 rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:cursor-not-allowed disabled:shadow-none"
                 >
                   {loading ? (
                     <span className="flex items-center justify-center">
